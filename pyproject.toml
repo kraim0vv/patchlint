@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "patchlint"
+version = "1.0.0"
+description = "Security linter that gives copy-paste remediation configs for Nginx, Apache & web frameworks."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Security Engineering Team" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/kraim0vv/patchlint"
+Repository = "https://github.com/kraim0vv/patchlint"
+Issues = "https://github.com/kraim0vv/patchlint/issues"
+dependencies = [
+    "httpx>=0.25.0",
+    "rich>=13.5.0",
+    "click>=8.1.0",
+    "jinja2>=3.1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "respx>=0.21.0",
+]
+
+[project.scripts]
+patchlint = "patchlint.cli:main"
+
+[tool.setuptools.package-data]
+patchlint = ["templates/*.html"]

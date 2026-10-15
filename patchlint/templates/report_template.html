@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PatchLint DAST Report - {{ summary.target_url }}</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --card-hover: #1e293b;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #3b82f6;
+      --critical: #ef4444;
+      --critical-bg: rgba(239, 68, 68, 0.15);
+      --high: #f97316;
+      --high-bg: rgba(249, 115, 22, 0.15);
+      --medium: #eab308;
+      --medium-bg: rgba(234, 179, 8, 0.15);
+      --low: #06b6d4;
+      --low-bg: rgba(6, 182, 212, 0.15);
+      --info: #3b82f6;
+      --info-bg: rgba(59, 130, 246, 0.15);
+      --code-bg: #030712;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 30px 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 30px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 20px;
+      color: #fff;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .meta-item {
+      font-size: 13px;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .meta-val {
+      color: #fff;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      word-break: break-all;
+    }
+
+    /* KPI Stats */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+      transition: transform 0.2s;
+    }
+
+    .kpi-card:hover { transform: translateY(-3px); }
+    .kpi-count { font-size: 36px; font-weight: 800; line-height: 1.1; margin-bottom: 5px; }
+    .kpi-label { font-size: 12px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.8px; }
+
+    .kpi-critical .kpi-count, .kpi-critical .kpi-label { color: var(--critical); }
+    .kpi-high .kpi-count, .kpi-high .kpi-label { color: var(--high); }
+    .kpi-medium .kpi-count, .kpi-medium .kpi-label { color: var(--medium); }
+    .kpi-low .kpi-count, .kpi-low .kpi-label { color: var(--low); }
+    .kpi-info .kpi-count, .kpi-info .kpi-label { color: var(--info); }
+    .kpi-total .kpi-count { color: #f3f4f6; }
+    .kpi-total .kpi-label { color: var(--text-muted); }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover { background: var(--card-hover); color: #fff; }
+    .filter-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .search-input {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      min-width: 250px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
+    /* Findings Cards */
+    .findings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .finding-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 24px;
+      border-left: 5px solid #6b7280;
+      transition: all 0.2s ease;
+    }
+
+    .finding-card.CRITICAL { border-left-color: var(--critical); }
+    .finding-card.HIGH { border-left-color: var(--high); }
+    .finding-card.MEDIUM { border-left-color: var(--medium); }
+    .finding-card.LOW { border-left-color: var(--low); }
+    .finding-card.INFO { border-left-color: var(--info); }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 15px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .badge-CRITICAL { background: var(--critical-bg); color: var(--critical); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-HIGH { background: var(--high-bg); color: var(--high); border: 1px solid rgba(249, 115, 22, 0.3); }
+    .badge-MEDIUM { background: var(--medium-bg); color: var(--medium); border: 1px solid rgba(234, 179, 8, 0.3); }
+    .badge-LOW { background: var(--low-bg); color: var(--low); border: 1px solid rgba(6, 182, 212, 0.3); }
+    .badge-INFO { background: var(--info-bg); color: var(--info); border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    .badge-category { background: #1e293b; color: #94a3b8; }
+    .badge-status { background: #374151; color: #e5e7eb; font-family: monospace; }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .card-url {
+      font-size: 13px;
+      color: #60a5fa;
+      font-family: ui-monospace, monospace;
+      margin-top: 4px;
+      word-break: break-all;
+    }
+
+    .card-desc {
+      font-size: 14px;
+      color: #d1d5db;
+      margin-bottom: 16px;
+    }
+
+    .evidence-box {
+      background: var(--code-bg);
+      border: 1px solid #1f2937;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+    }
+
+    .evidence-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #ef4444;
+      margin-bottom: 5px;
+    }
+
+    .evidence-text {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      color: #f87171;
+      word-break: break-all;
+    }
+
+    /* Remediation Section */
+    .remediation-box {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 15px;
+    }
+
+    .remediation-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .remediation-guidance {
+      font-size: 14px;
+      color: #cbd5e1;
+      white-space: pre-line;
+      margin-bottom: 16px;
+    }
+
+    .snippet-container {
+      margin-bottom: 14px;
+    }
+
+    .snippet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      padding: 6px 14px;
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    .copy-btn {
+      background: #334155;
+      border: none;
+      color: #e2e8f0;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .copy-btn:hover { background: #475569; }
+
+    pre.code-block {
+      background: var(--code-bg);
+      border: 1px solid #1e293b;
+      border-top: none;
+      border-bottom-left-radius: 6px;
+      border-bottom-right-radius: 6px;
+      padding: 14px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      color: #38bdf8;
+      line-height: 1.5;
+    }
+
+    .references {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .references a {
+      color: #60a5fa;
+      text-decoration: none;
+      margin-right: 12px;
+      display: inline-block;
+    }
+    .references a:hover { text-decoration: underline; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      color: #10b981;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 50px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-top">
+        <div class="logo-badge">
+          <div class="logo-icon">&#128737;</div>
+          <div>
+            <h1>PatchLint Security Linter</h1>
+            <p style="font-size: 12px; color: var(--text-muted);">Developer-First DAST & Actionable Remediation</p>
+          </div>
+        </div>
+        <div>
+          <span class="status-badge">&#x2714; Scan Finished</span>
+        </div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-label">Target URL</div>
+          <div class="meta-val">{{ summary.target_url }}</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Audit Timestamp</div>
+          <div class="meta-val">{{ summary.start_time }}</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Duration</div>
+          <div class="meta-val">{{ summary.duration_seconds }}s</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">HTTP Requests</div>
+          <div class="meta-val">{{ summary.total_requests }}</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI Metric Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-total">
+        <div class="kpi-count">{{ summary.total_findings }}</div>
+        <div class="kpi-label">Total Findings</div>
+      </div>
+      <div class="kpi-card kpi-critical">
+        <div class="kpi-count">{{ summary.counts_by_severity.CRITICAL }}</div>
+        <div class="kpi-label">Critical</div>
+      </div>
+      <div class="kpi-card kpi-high">
+        <div class="kpi-count">{{ summary.counts_by_severity.HIGH }}</div>
+        <div class="kpi-label">High</div>
+      </div>
+      <div class="kpi-card kpi-medium">
+        <div class="kpi-count">{{ summary.counts_by_severity.MEDIUM }}</div>
+        <div class="kpi-label">Medium</div>
+      </div>
+      <div class="kpi-card kpi-low">
+        <div class="kpi-count">{{ summary.counts_by_severity.LOW }}</div>
+        <div class="kpi-label">Low</div>
+      </div>
+      <div class="kpi-card kpi-info">
+        <div class="kpi-count">{{ summary.counts_by_severity.INFO }}</div>
+        <div class="kpi-label">Info</div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="filter-pills">
+        <button class="filter-btn active" onclick="filterSeverity('ALL')">All ({{ summary.total_findings }})</button>
+        <button class="filter-btn" onclick="filterSeverity('CRITICAL')">Critical ({{ summary.counts_by_severity.CRITICAL }})</button>
+        <button class="filter-btn" onclick="filterSeverity('HIGH')">High ({{ summary.counts_by_severity.HIGH }})</button>
+        <button class="filter-btn" onclick="filterSeverity('MEDIUM')">Medium ({{ summary.counts_by_severity.MEDIUM }})</button>
+        <button class="filter-btn" onclick="filterSeverity('LOW')">Low ({{ summary.counts_by_severity.LOW }})</button>
+      </div>
+      <input type="text" id="searchInput" class="search-input" placeholder="Search findings..." onkeyup="searchFindings()">
+    </div>
+
+    <!-- Findings List -->
+    <div class="findings-container" id="findingsContainer">
+      {% for f in findings %}
+      <div class="finding-card {{ f.severity }}" data-severity="{{ f.severity }}">
+        <div class="card-header">
+          <div>
+            <div class="badge-group">
+              <span class="badge badge-{{ f.severity }}">{{ f.severity }}</span>
+              <span class="badge badge-category">{{ f.category }}</span>
+              {% if f.response_status %}
+              <span class="badge badge-status">HTTP {{ f.response_status }}</span>
+              {% endif %}
+            </div>
+            <h2 class="card-title">{{ f.title }}</h2>
+            <div class="card-url">{{ f.url }}</div>
+          </div>
+        </div>
+
+        <p class="card-desc">{{ f.description }}</p>
+
+        <div class="evidence-box">
+          <div class="evidence-label">&#9888; Evidence</div>
+          <div class="evidence-text">{{ f.evidence }}</div>
+        </div>
+
+        <!-- Remediation -->
+        <div class="remediation-box">
+          <div class="remediation-title">
+            <span>&#128161; Remediation Guidance</span>
+          </div>
+          <div class="remediation-guidance">{{ f.remediation.guidance }}</div>
+
+          {% for ex in f.remediation.examples %}
+          <div class="snippet-container">
+            <div class="snippet-header">
+              <span>{{ ex.title }} ({{ ex.language }})</span>
+              <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+            </div>
+            <pre class="code-block"><code>{{ ex.snippet }}</code></pre>
+          </div>
+          {% endfor %}
+
+          {% if f.remediation.references %}
+          <div class="references">
+            <strong>References:</strong>
+            {% for ref in f.remediation.references %}
+            <a href="{{ ref }}" target="_blank" rel="noopener noreferrer">&#8599; {{ ref }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if not findings %}
+      <div class="empty-state">
+        <h2>&#x2714; Clean Bill of Health!</h2>
+        <p style="color: var(--text-muted); margin-top: 8px;">No security issues or missing headers detected according to the current rule set.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <footer>
+      Generated by <strong>PatchLint Open-Source DAST &amp; Security Linter</strong> &bull; Safe by Design
+    </footer>
+  </div>
+
+  <script>
+    function copySnippet(button) {
+      const code = button.closest('.snippet-container').querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const originalText = button.innerText;
+        button.innerText = 'Copied!';
+        button.style.background = '#10b981';
+        setTimeout(() => {
+          button.innerText = originalText;
+          button.style.background = '';
+        }, 1800);
+      });
+    }
+
+    function filterSeverity(severity) {
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const cards = document.querySelectorAll('.finding-card');
+      cards.forEach(card => {
+        if (severity === 'ALL' || card.getAttribute('data-severity') === severity) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function searchFindings() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const cards = document.querySelectorAll('.finding-card');
+      cards.forEach(card => {
+        const text = card.innerText.toLowerCase();
+        if (text.includes(query)) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
