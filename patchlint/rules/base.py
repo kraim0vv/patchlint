@@ -89,12 +89,13 @@ class BaseRule(ABC):
         evidence: str,
         response_status: int | None = None,
         custom_description: str | None = None,
+        severity: Severity | None = None,
     ) -> Finding:
         """Helper to create a normalized Finding from this rule."""
         return Finding(
             rule_id=self.id,
             title=self.title,
-            severity=self.severity,
+            severity=severity or self.severity,
             category=self.category,
             url=url,
             description=custom_description or self.description,

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import httpx
 
-from patchlint.models import Category, Remediation, RemediationExample, Severity
-from patchlint.rules.base import HeaderRule
+from patchlint.models import Category, Finding, Remediation, RemediationExample, Severity
+from patchlint.rules.base import HeaderRule, ScanContext
 
 
 class MissingCSPRule(HeaderRule):
@@ -148,6 +149,13 @@ class MissingHSTSRule(HeaderRule):
             target_header="strict-transport-security",
             tags=["headers", "hsts", "ssl"],
         )
+
+    async def check(self, context: ScanContext) -> list[Finding]:
+        findings = await super().check(context)
+        # Browsers ignore HSTS received over plain HTTP, so on http:// targets this is advisory only.
+        if context.base_response is not None and context.base_response.url.scheme != "https":
+            return [replace(f, severity=Severity.INFO) for f in findings]
+        return findings
 
     def evaluate_headers(
         self, headers: httpx.Headers, response: httpx.Response

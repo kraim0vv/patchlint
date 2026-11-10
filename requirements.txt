@@ -3,6 +3,7 @@ httpx>=0.25.0
 rich>=13.5.0
 click>=8.1.0
 jinja2>=3.1.2
+tomli>=1.1.0; python_version < '3.11'
 
 # Development / test dependencies (mirrors [project.optional-dependencies].dev)
 pytest>=7.4.0
