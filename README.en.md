@@ -26,7 +26,7 @@ Language versions:
   - Real-time progress bar with an interactive spinner.
   - Summary metrics tables and syntax-highlighted remediation configuration blocks.
 - Report Export (JSON and HTML):
-  - JSON (--format json -o report.json): Structured machine-readable schema for CI/CD integration (GitHub Actions, GitLab CI).
+  - JSON (--format json -o report.json) and SARIF (-o results.sarif): Structured machine-readable schema for CI/CD integration (GitHub Actions, GitLab CI).
   - HTML (--format html -o report.html): Standalone interactive dashboard (zero external CDN dependencies, works fully offline) featuring severity filters, instant search, and one-click copy buttons for configuration snippets.
 - Modular Rule-Based Architecture:
   - Clean separation of inspection logic from the execution engine.
@@ -37,17 +37,20 @@ Language versions:
 ## Project Structure
 
 ```text
-d:\webchec\
+patchlint/
 ├── patchlint\
 │   ├── __init__.py           # Package exports for core engine and models
 │   ├── __main__.py           # Entrypoint for python -m patchlint
 │   ├── cli.py                # Command-line interface (Click + Rich)
 │   ├── engine.py             # Asynchronous DAST engine using HTTPX
 │   ├── models.py             # Data models (Severity, Finding, Remediation, ScanReport)
+│   ├── config.py             # .patchlint.toml / baseline
 │   ├── reporter.py           # Report dispatchers (Terminal, JSON, HTML)
 │   ├── rules\
 │   │   ├── __init__.py       # Central rule registry (RuleRegistry)
 │   │   ├── base.py           # Base abstractions (BaseRule, HeaderRule, PathExposureRule, MultiPathExposureRule)
+│   │   ├── cookies.py        # Cookie flags (Secure, HttpOnly, SameSite)
+│   │   ├── cors.py           # CORS origin reflection
 │   │   ├── headers.py        # Security header rules (CSP, HSTS, XFO, MIME, Referrer, Server, XPB)
 │   │   └── exposure.py       # File leak rules (/.env, /.git, config, dump, openapi) and Debug Mode
 │   └── templates\
@@ -57,11 +60,13 @@ d:\webchec\
 │   ├── __init__.py
 │   ├── test_cli.py           # Tests for CLI exit codes and --fail-on thresholds
 │   ├── test_rules.py         # Unit tests for rules and false-positive prevention
-│   └── test_engine.py        # Tests for engine execution and report rendering
+│   ├── test_engine.py        # Tests for engine execution and report rendering
+│   ├── test_scan.py          # End-to-end scan tests (httpx.MockTransport)
+│   └── test_features.py      # SARIF, baseline, config, cookies, CORS
+├── .github/workflows/ci.yml  # CI: tests on Python 3.10–3.13
 ├── demo_target.py            # Local vulnerable server for rapid testing (standard library)
 ├── requirements.txt          # Project dependencies
 ├── pyproject.toml            # Build metadata and console script registration
-├── setup.py                  # Package setup script
 ├── README.md                 # Main documentation file
 ├── README.en.md              # English documentation
 └── README.ru.md              # Russian documentation
@@ -76,8 +81,9 @@ d:\webchec\
 
 ### 2. Environment Setup and Installation
 ```bash
-# Navigate to the project directory
-cd d:\webchec
+# Clone the repository
+git clone https://github.com/kraim0vv/patchlint.git
+cd patchlint
 
 # Create a virtual environment
 python -m venv venv
@@ -88,11 +94,8 @@ python -m venv venv
 # Linux / macOS:
 source venv/bin/activate
 
-# Install dependencies:
-pip install -r requirements.txt
-
 # Install the CLI in development mode:
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ---
@@ -136,6 +139,43 @@ patchlint http://localhost:8000 -s HIGH
 patchlint --list-rules
 ```
 
+### SARIF for GitHub code scanning:
+```bash
+patchlint https://staging.example.com -o results.sarif
+```
+Upload it in GitHub Actions with `github/codeql-action/upload-sarif` (needs `security-events: write`):
+```yaml
+- run: patchlint https://staging.example.com -o results.sarif || true
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
+
+### Excluding rules:
+```bash
+patchlint http://localhost:8000 --exclude missing-hsts-header,missing-csp-header
+```
+
+### Baseline (accept known findings, fail only on new ones):
+```bash
+patchlint https://staging.example.com -f json -o patchlint-baseline.json   # once
+patchlint https://staging.example.com --baseline patchlint-baseline.json  # in CI
+```
+Findings are matched by rule ID + URL path, so a baseline recorded on staging also works for other hosts.
+
+### Configuration file:
+PatchLint reads `.patchlint.toml` (or `[tool.patchlint]` in `pyproject.toml`) from the current directory. Command-line options take precedence; `--no-config` disables it.
+```toml
+exclude = ["missing-hsts-header"]
+fail_on = "CRITICAL"
+min_severity = "LOW"
+timeout = 15
+concurrency = 5
+baseline = "patchlint-baseline.json"
+```
+
+If a rule crashes, the scan continues, the error is shown in every report format, and the JSON `summary.status` becomes `completed_with_errors`.
+
 ---
 
 ## Testing with the Built-in Demo Target
@@ -148,6 +188,7 @@ The repository includes a lightweight test server (demo_target.py) simulating co
 - Exposed /docker-compose.yml and /dump.sql files.
 - Exposed OpenAPI specification (/openapi.json).
 - Active Debug Mode (500 error page exposing Werkzeug traceback signatures).
+- Session cookie without HttpOnly/SameSite and CORS that reflects any Origin with credentials.
 
 ### Running the demo test:
 
@@ -170,7 +211,7 @@ patchlint http://127.0.0.1:8888 -f html -o demo_report.html
 | Rule ID | Severity | Problem Description |
 | :--- | :--- | :--- |
 | missing-csp-header | HIGH | Content-Security-Policy is missing. Risk of XSS and data injection. |
-| missing-hsts-header | HIGH | Strict-Transport-Security is missing. Risk of MitM and SSL stripping. |
+| missing-hsts-header | HIGH | Strict-Transport-Security is missing. Risk of MitM and SSL stripping. Reported as INFO for plain-HTTP targets. |
 | missing-x-frame-options | MEDIUM | Missing clickjacking protection (framing restrictions). |
 | missing-x-content-type-options | LOW | Missing nosniff directive. Risk of browser MIME confusion. |
 | missing-referrer-policy | LOW | Missing control over sensitive URL query parameters in Referer headers. |
@@ -191,6 +232,8 @@ patchlint http://127.0.0.1:8888 -f html -o demo_report.html
 | Rule ID | Severity | Problem Description |
 | :--- | :--- | :--- |
 | debug-mode-enabled | HIGH | Application runs in debug mode (Django Debug, Werkzeug Traceback, Laravel Ignition). Risk of RCE. |
+| insecure-cookie-flags | MEDIUM | Cookies set without Secure (HTTPS only), HttpOnly or SameSite. Values are never reported. |
+| cors-misconfiguration | HIGH / MEDIUM | Arbitrary or `null` Origin is reflected in Access-Control-Allow-Origin (HIGH with credentials). |
 
 ---
 

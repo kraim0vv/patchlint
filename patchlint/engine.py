@@ -8,10 +8,12 @@ import ssl
 import time
 from typing import Callable
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from patchlint.models import Finding, ScanReport, ScanSummary, Severity
+from patchlint._version import __version__
+from patchlint.models import Finding, RuleError, ScanReport, ScanSummary, Severity
 from patchlint.rules import BaseRule, HeaderRule, RuleRegistry
 from patchlint.rules.base import ScanContext
 
@@ -22,6 +24,21 @@ class AuditEngineError(Exception):
 
 class TargetUnreachableError(AuditEngineError):
     """Raised when the target web application cannot be reached."""
+
+
+def normalize_target_url(target_url: str) -> str:
+    """Add a missing scheme and drop query/fragment so probe paths append cleanly."""
+    target_url = target_url.strip()
+    if "://" not in target_url:
+        target_url = f"http://{target_url}"
+    parts = urlsplit(target_url)
+    if parts.scheme.lower() not in ("http", "https"):
+        raise AuditEngineError(
+            f"Unsupported URL scheme '{parts.scheme}'. Only http:// and https:// are supported."
+        )
+    if not parts.hostname:
+        raise AuditEngineError(f"Invalid target URL '{target_url}': missing hostname.")
+    return urlunsplit((parts.scheme.lower(), parts.netloc, parts.path or "/", "", ""))
 
 
 class AuditEngine:
@@ -36,14 +53,16 @@ class AuditEngine:
         user_agent: str | None = None,
         headers_only: bool = False,
         min_severity: Severity | None = None,
+        exclude_rules: set[str] | None = None,
     ) -> None:
         self.registry = registry or RuleRegistry()
         self.timeout = timeout
         self.concurrency = max(1, concurrency)
         self.verify_ssl = verify_ssl
-        self.user_agent = user_agent or "PatchLint/1.0 (+https://github.com/kraim0vv/patchlint)"
+        self.user_agent = user_agent or f"PatchLint/{__version__} (+https://github.com/kraim0vv/patchlint)"
         self.headers_only = headers_only
         self.min_severity = min_severity
+        self.exclude_rules = set(exclude_rules or ())
 
         self._request_count = 0
 
@@ -101,7 +120,14 @@ class AuditEngine:
             ) from exc
         except httpx.ConnectError as exc:
             err_msg = str(exc)
-            if "Errno 11001" in err_msg or "getaddrinfo failed" in err_msg:
+            dns_markers = (
+                "Errno 11001",  # Windows
+                "getaddrinfo failed",
+                "Name or service not known",  # Linux
+                "Temporary failure in name resolution",
+                "nodename nor servname",  # macOS
+            )
+            if any(marker in err_msg for marker in dns_markers):
                 raise TargetUnreachableError(
                     f"DNS resolution failed for {target_url}. Please verify the hostname."
                 ) from exc
@@ -152,11 +178,10 @@ class AuditEngine:
         start_time = datetime.now(timezone.utc)
         start_mono = time.monotonic()
 
-        # Normalize target URL
-        if not target_url.startswith(("http://", "https://")):
-            target_url = f"http://{target_url}"
+        target_url = normalize_target_url(target_url)
 
         findings: list[Finding] = []
+        errors: list[RuleError] = []
 
         async with self._build_client() as client:
             # Phase 1: Reachability & Baseline
@@ -176,52 +201,44 @@ class AuditEngine:
 
             # Phase 2: Select rules
             if self.headers_only:
-                rules_to_run = self.registry.get_header_rules()
+                rules_to_run: list[BaseRule] = list(self.registry.get_header_rules())
             else:
                 rules_to_run = self.registry.get_all()
+            rules_to_run = [r for r in rules_to_run if r.id not in self.exclude_rules]
 
             total_rules = len(rules_to_run)
             completed_rules = 0
 
-            # Phase 3: Execute rules
-            # Header rules run synchronously first (no extra network overhead)
-            header_rules = [r for r in rules_to_run if isinstance(r, HeaderRule)]
-            active_rules = [r for r in rules_to_run if not isinstance(r, HeaderRule)]
-
-            for rule in header_rules:
+            async def run_rule(rule: BaseRule) -> None:
+                nonlocal completed_rules
                 if on_progress:
                     on_progress(completed_rules, total_rules, rule.title)
-                rule_findings = await rule.check(context)
-                for f in rule_findings:
-                    if self._matches_min_severity(f.severity):
-                        findings.append(f)
-                        if on_finding:
-                            on_finding(f)
-                completed_rules += 1
+                try:
+                    for f in await rule.check(context):
+                        if self._matches_min_severity(f.severity):
+                            findings.append(f)
+                            if on_finding:
+                                on_finding(f)
+                except Exception as exc:  # noqa: BLE001 - one broken rule must not abort the scan
+                    errors.append(RuleError(rule_id=rule.id, message=f"{type(exc).__name__}: {exc}"))
+                finally:
+                    completed_rules += 1
 
-            # Active rules run with controlled concurrency via Semaphore
+            # Phase 3: Header rules are passive (reuse the baseline response); active rules
+            # issue their own requests under a concurrency limit.
+            for rule in rules_to_run:
+                if isinstance(rule, HeaderRule):
+                    await run_rule(rule)
+
             sem = asyncio.Semaphore(self.concurrency)
 
-            async def run_active_rule(rule: BaseRule) -> None:
-                nonlocal completed_rules
+            async def run_limited(rule: BaseRule) -> None:
                 async with sem:
-                    if on_progress:
-                        on_progress(completed_rules, total_rules, rule.title)
-                    try:
-                        rule_findings = await rule.check(context)
-                        for f in rule_findings:
-                            if self._matches_min_severity(f.severity):
-                                findings.append(f)
-                                if on_finding:
-                                    on_finding(f)
-                    except Exception:
-                        # Individual rule failures do not abort the scan
-                        pass
-                    finally:
-                        completed_rules += 1
+                    await run_rule(rule)
 
-            if active_rules:
-                await asyncio.gather(*(run_active_rule(r) for r in active_rules))
+            await asyncio.gather(
+                *(run_limited(r) for r in rules_to_run if not isinstance(r, HeaderRule))
+            )
 
             if on_progress:
                 on_progress(total_rules, total_rules, "Scan complete")
@@ -230,7 +247,7 @@ class AuditEngine:
         end_time = datetime.now(timezone.utc)
 
         # Sort findings by severity (CRITICAL first)
-        findings.sort(key=lambda f: f.severity.rank, reverse=True)
+        findings.sort(key=lambda f: (-f.severity.rank, f.rule_id, f.url))
 
         # Calculate metrics
         counts_by_severity = {s.value: 0 for s in Severity}
@@ -245,10 +262,11 @@ class AuditEngine:
             total_requests=self._request_count,
             total_findings=len(findings),
             counts_by_severity=counts_by_severity,
-            status="completed",
+            status="completed_with_errors" if errors else "completed",
         )
 
-        return ScanReport(summary=summary, findings=findings)
+        errors.sort(key=lambda e: e.rule_id)
+        return ScanReport(summary=summary, findings=findings, errors=errors)
 
     def _matches_min_severity(self, severity: Severity) -> bool:
         if self.min_severity is None:

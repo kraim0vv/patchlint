@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Iterable
 
 from patchlint.rules.base import BaseRule, HeaderRule, MultiPathExposureRule, PathExposureRule, ScanContext
+from patchlint.rules.cookies import InsecureCookieRule
+from patchlint.rules.cors import CorsMisconfigurationRule
 from patchlint.rules.exposure import (
     DebugModeRule,
     ExposedConfigJsonRule,
@@ -71,6 +73,7 @@ class RuleRegistry:
             MissingReferrerPolicyRule(),
             ServerVersionDisclosureRule(),
             XPoweredByDisclosureRule(),
+            InsecureCookieRule(),
             # Information Disclosure & Exposed Files
             ExposedEnvFileRule(),
             ExposedGitDirectoryRule(),
@@ -80,6 +83,7 @@ class RuleRegistry:
             ExposedSwaggerJsonRule(),
             # Misconfiguration
             DebugModeRule(),
+            CorsMisconfigurationRule(),
         ]
         for rule in default_rules:
             self.register(rule)
@@ -106,4 +110,6 @@ __all__ = [
     "ExposedDatabaseDumpRule",
     "ExposedSwaggerJsonRule",
     "DebugModeRule",
+    "InsecureCookieRule",
+    "CorsMisconfigurationRule",
 ]

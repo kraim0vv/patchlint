@@ -474,11 +474,23 @@
         <button class="filter-btn" onclick="filterSeverity('HIGH')">High ({{ summary.counts_by_severity.HIGH }})</button>
         <button class="filter-btn" onclick="filterSeverity('MEDIUM')">Medium ({{ summary.counts_by_severity.MEDIUM }})</button>
         <button class="filter-btn" onclick="filterSeverity('LOW')">Low ({{ summary.counts_by_severity.LOW }})</button>
+        <button class="filter-btn" onclick="filterSeverity('INFO')">Info ({{ summary.counts_by_severity.INFO }})</button>
       </div>
       <input type="text" id="searchInput" class="search-input" placeholder="Search findings..." onkeyup="searchFindings()">
     </div>
 
     <!-- Findings List -->
+    {% if errors %}
+    <div class="rule-errors" style="background: var(--card-bg); border: 1px solid var(--card-border); border-left: 5px solid var(--medium); border-radius: var(--radius); padding: 24px; margin-bottom: 20px;">
+      <h2 class="card-title">&#x26A0; {{ errors|length }} rule(s) failed to run &mdash; results are incomplete</h2>
+      {% for e in errors %}
+      <div class="evidence-text">{{ e.rule_id }}: {{ e.message }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if suppressed_count %}
+    <p style="color: var(--text-muted); margin-bottom: 16px;">{{ suppressed_count }} known finding(s) suppressed by baseline.</p>
+    {% endif %}
     <div class="findings-container" id="findingsContainer">
       {% for f in findings %}
       <div class="finding-card {{ f.severity }}" data-severity="{{ f.severity }}">
@@ -532,7 +544,7 @@
       </div>
       {% endfor %}
 
-      {% if not findings %}
+      {% if not findings and not errors %}
       <div class="empty-state">
         <h2>&#x2714; Clean Bill of Health!</h2>
         <p style="color: var(--text-muted); margin-top: 8px;">No security issues or missing headers detected according to the current rule set.</p>

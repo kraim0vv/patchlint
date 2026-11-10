@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patchlint"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Security linter that gives copy-paste remediation configs for Nginx, Apache & web frameworks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,18 +20,21 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "httpx>=0.25.0",
+    "rich>=13.5.0",
+    "click>=8.1.0",
+    "jinja2>=3.1.2",
+    "tomli>=1.1.0; python_version < '3.11'",
 ]
 
 [project.urls]
 Homepage = "https://github.com/kraim0vv/patchlint"
 Repository = "https://github.com/kraim0vv/patchlint"
 Issues = "https://github.com/kraim0vv/patchlint/issues"
-dependencies = [
-    "httpx>=0.25.0",
-    "rich>=13.5.0",
-    "click>=8.1.0",
-    "jinja2>=3.1.2",
-]
 
 [project.optional-dependencies]
 dev = [
@@ -43,5 +46,14 @@ dev = [
 [project.scripts]
 patchlint = "patchlint.cli:main"
 
+[tool.setuptools.dynamic]
+version = { attr = "patchlint._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["patchlint*"]
+
 [tool.setuptools.package-data]
 patchlint = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

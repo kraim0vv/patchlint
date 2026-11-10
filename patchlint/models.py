@@ -7,9 +7,11 @@ and Scan Result containers with full serialization capabilities.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from urllib.parse import urlsplit
 
 
 class Severity(str, Enum):
@@ -20,6 +22,10 @@ class Severity(str, Enum):
     MEDIUM = "MEDIUM"
     LOW = "LOW"
     INFO = "INFO"
+
+    # Python 3.11+ renders str-mixin enums as "Severity.X" in str()/templates.
+    def __str__(self) -> str:
+        return self.value
 
     @property
     def rank(self) -> int:
@@ -68,6 +74,9 @@ class Category(str, Enum):
     INFORMATION_DISCLOSURE = "Information Disclosure"
     MISCONFIGURATION = "Misconfiguration"
 
+    def __str__(self) -> str:
+        return self.value
+
 
 @dataclass(slots=True, frozen=True)
 class RemediationExample:
@@ -101,6 +110,11 @@ class Remediation:
         }
 
 
+def compute_fingerprint(rule_id: str, url: str) -> str:
+    path = urlsplit(url).path or "/"
+    return hashlib.sha256(f"{rule_id}|{path}".encode()).hexdigest()[:16]
+
+
 @dataclass(slots=True)
 class Finding:
     """An individual security finding detected during the scan."""
@@ -116,9 +130,15 @@ class Finding:
     response_status: int | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    @property
+    def fingerprint(self) -> str:
+        """Stable ID of rule + URL path (host-independent, so baselines work across environments)."""
+        return compute_fingerprint(self.rule_id, self.url)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "rule_id": self.rule_id,
+            "fingerprint": self.fingerprint,
             "title": self.title,
             "severity": self.severity.value,
             "category": self.category.value,
@@ -160,14 +180,37 @@ class ScanSummary:
 
 
 @dataclass(slots=True)
+class RuleError:
+    """A rule that crashed during the scan; surfaced so failures never look like a clean result."""
+
+    rule_id: str
+    message: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"rule_id": self.rule_id, "message": self.message}
+
+
+@dataclass(slots=True)
 class ScanReport:
     """Complete scan results container."""
 
     summary: ScanSummary
     findings: list[Finding]
+    errors: list[RuleError] = field(default_factory=list)
+    suppressed_count: int = 0
+
+    def recount(self) -> None:
+        """Re-sync summary counters after findings were filtered."""
+        counts = {s.value: 0 for s in Severity}
+        for f in self.findings:
+            counts[f.severity.value] += 1
+        self.summary.counts_by_severity = counts
+        self.summary.total_findings = len(self.findings)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "summary": self.summary.to_dict(),
             "findings": [f.to_dict() for f in self.findings],
+            "errors": [e.to_dict() for e in self.errors],
+            "suppressed_count": self.suppressed_count,
         }

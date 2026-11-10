@@ -24,6 +24,13 @@ class VulnerableServerHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         # Deliberately disclose technology stack
         self.send_header("X-Powered-By", "PHP/8.1.0")
+        # Session cookie without HttpOnly/SameSite
+        self.send_header("Set-Cookie", "PHPSESSID=demo123; Path=/")
+        # Reflect any Origin with credentials (permissive CORS)
+        origin = self.headers.get("Origin")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Credentials", "true")
         # Intentionally OMIT CSP, HSTS, X-Frame-Options, X-Content-Type-Options
         super().end_headers()
 

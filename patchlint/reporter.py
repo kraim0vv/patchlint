@@ -13,6 +13,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from patchlint._version import __version__
 from patchlint.models import Finding, ScanReport, Severity
 from patchlint.templates import HTML_REPORT_TEMPLATE
 
@@ -78,8 +79,29 @@ class ConsoleReporter(BaseReporter):
         self.console.print(table)
         self.console.print()
 
+        if report.suppressed_count:
+            self.console.print(
+                f"[dim]{report.suppressed_count} known finding(s) suppressed by baseline.[/dim]\n"
+            )
+
+        if report.errors:
+            err_text = Text()
+            for e in report.errors:
+                err_text.append(f"{e.rule_id}: ", style="bold yellow")
+                err_text.append(f"{e.message}\n")
+            self.console.print(
+                Panel(
+                    err_text,
+                    title="[bold yellow]⚠ Rules failed to run — results are incomplete[/bold yellow]",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
+
         # 3. Findings Details
         if not report.findings:
+            if report.errors:
+                return ""
             self.console.print(
                 Panel(
                     "[bold green]✔ Clean bill of health! No security issues found.[/bold green]",
@@ -172,6 +194,104 @@ class JsonReporter(BaseReporter):
         return content
 
 
+class SarifReporter(BaseReporter):
+    """SARIF 2.1.0 reporter for GitHub code scanning and other SARIF-aware tools."""
+
+    SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
+    LEVELS = {
+        Severity.CRITICAL: "error",
+        Severity.HIGH: "error",
+        Severity.MEDIUM: "warning",
+        Severity.LOW: "note",
+        Severity.INFO: "note",
+    }
+    # GitHub buckets security-severity: >=9 critical, 7-8.9 high, 4-6.9 medium, <4 low.
+    SECURITY_SEVERITY = {
+        Severity.CRITICAL: "9.5",
+        Severity.HIGH: "8.0",
+        Severity.MEDIUM: "5.5",
+        Severity.LOW: "3.0",
+        Severity.INFO: "1.0",
+    }
+
+    def render(self, report: ScanReport, destination: str | None = None) -> str:
+        content = json.dumps(self.build(report), indent=2, ensure_ascii=False)
+        if destination:
+            Path(destination).write_text(content, encoding="utf-8")
+        return content
+
+    def build(self, report: ScanReport) -> dict[str, Any]:
+        rules: list[dict[str, Any]] = []
+        rule_index: dict[str, int] = {}
+        results: list[dict[str, Any]] = []
+
+        for f in report.findings:
+            if f.rule_id not in rule_index:
+                rule_index[f.rule_id] = len(rules)
+                rules.append(self._rule_descriptor(f))
+            results.append(
+                {
+                    "ruleId": f.rule_id,
+                    "ruleIndex": rule_index[f.rule_id],
+                    "level": self.LEVELS[f.severity],
+                    "message": {"text": f"{f.title}: {f.evidence}"},
+                    "locations": [
+                        {"physicalLocation": {"artifactLocation": {"uri": f.url}}}
+                    ],
+                    "partialFingerprints": {"patchlintFingerprint/v1": f.fingerprint},
+                    "properties": {"severity": f.severity.value},
+                }
+            )
+
+        return {
+            "$schema": self.SCHEMA,
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "PatchLint",
+                            "version": __version__,
+                            "informationUri": "https://github.com/kraim0vv/patchlint",
+                            "rules": rules,
+                        }
+                    },
+                    "results": results,
+                    "invocations": [
+                        {
+                            "executionSuccessful": not report.errors,
+                            "toolExecutionNotifications": [
+                                {"level": "error", "message": {"text": f"{e.rule_id}: {e.message}"}}
+                                for e in report.errors
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def _rule_descriptor(self, f: Finding) -> dict[str, Any]:
+        rem = f.remediation
+        md = [rem.guidance, ""]
+        for ex in rem.examples:
+            md += [f"**{ex.title}**", f"```{ex.language}", ex.snippet, "```", ""]
+        if rem.references:
+            md += ["References:"] + [f"- {r}" for r in rem.references]
+        return {
+            "id": f.rule_id,
+            "name": f.rule_id,
+            "shortDescription": {"text": f.title},
+            "fullDescription": {"text": f.description},
+            "help": {"text": rem.guidance, "markdown": "\n".join(md)},
+            "helpUri": rem.references[0] if rem.references else "https://github.com/kraim0vv/patchlint",
+            "defaultConfiguration": {"level": self.LEVELS[f.severity]},
+            "properties": {
+                "tags": ["security", f.category.value],
+                "security-severity": self.SECURITY_SEVERITY[f.severity],
+            },
+        }
+
+
 class HtmlReporter(BaseReporter):
     """HTML reporter creating standalone, self-contained interactive reports."""
 
@@ -186,10 +306,13 @@ class HtmlReporter(BaseReporter):
             from jinja2 import Template
 
             template_str = HTML_REPORT_TEMPLATE.read_text(encoding="utf-8")
-            template = Template(template_str)
+            # Evidence and URLs come from the scanned target and must be escaped.
+            template = Template(template_str, autoescape=True)
             return template.render(
                 summary=report.summary,
                 findings=report.findings,
+                errors=report.errors,
+                suppressed_count=report.suppressed_count,
             )
         except ImportError:
             # Fallback zero-dependency HTML generator if jinja2 is not installed
@@ -265,8 +388,10 @@ def get_reporter(report_format: str, console: Console | None = None) -> BaseRepo
     fmt = report_format.lower()
     if fmt == "json":
         return JsonReporter()
+    if fmt == "sarif":
+        return SarifReporter()
     if fmt == "html":
         return HtmlReporter()
     if fmt == "terminal" or fmt == "console":
         return ConsoleReporter(console=console)
-    raise ValueError(f"Unsupported report format '{report_format}'. Supported: terminal, json, html")
+    raise ValueError(f"Unsupported report format '{report_format}'. Supported: terminal, json, sarif, html")

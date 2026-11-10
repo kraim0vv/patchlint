@@ -78,3 +78,17 @@ def test_html_reporter(sample_report, tmp_path):
     assert "Missing Content-Security-Policy" in rendered
     assert "add_header Content-Security-Policy" in rendered
     assert output_file.exists()
+
+
+def test_html_reporter_severity_classes(sample_report):
+    rendered = HtmlReporter().render(sample_report)
+    assert 'data-severity="HIGH"' in rendered
+    assert "Severity.HIGH" not in rendered
+
+
+def test_html_reporter_escapes_target_controlled_data(sample_report):
+    # Evidence is attacker-controlled (headers/bodies of the scanned site).
+    sample_report.findings[0].evidence = "Server: <script>alert(1)</script>"
+    rendered = HtmlReporter().render(sample_report)
+    assert "<script>alert(1)</script>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered

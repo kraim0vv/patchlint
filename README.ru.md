@@ -37,17 +37,20 @@ PatchLint - утилита динамического анализа защищ�
 ## Структура проекта
 
 ```text
-d:\webchec\
+patchlint/
 ├── patchlint\
 │   ├── __init__.py           # Экспорт основных сущностей пакета
 │   ├── __main__.py           # Точка входа для запуска через python -m patchlint
 │   ├── cli.py                # Консольный интерфейс (Click + Rich)
 │   ├── engine.py             # Асинхронный DAST-движок на HTTPX
 │   ├── models.py             # Датаклассы (Severity, Finding, Remediation, ScanReport)
+│   ├── config.py             # .patchlint.toml / baseline
 │   ├── reporter.py           # Генераторы отчетов (Terminal, JSON, HTML)
 │   ├── rules\
 │   │   ├── __init__.py       # Реестр правил (RuleRegistry)
 │   │   ├── base.py           # Базовые классы (BaseRule, HeaderRule, PathExposureRule, MultiPathExposureRule)
+│   │   ├── cookies.py        # Cookie flags (Secure, HttpOnly, SameSite)
+│   │   ├── cors.py           # CORS origin reflection
 │   │   ├── headers.py        # Проверки HTTP Security Headers
 │   │   └── exposure.py       # Проверки утечек файлов (/.env, /.git, config, dump, openapi) и Debug Mode
 │   └── templates\
@@ -57,11 +60,13 @@ d:\webchec\
 │   ├── __init__.py
 │   ├── test_cli.py           # Тесты CLI exit-кодов и порогов --fail-on
 │   ├── test_rules.py         # Юнит-тесты правил, respx моки, ложные срабатывания
-│   └── test_engine.py        # Тесты движка и сериализации отчетов
+│   ├── test_engine.py        # Тесты движка и сериализации отчетов
+│   ├── test_scan.py          # End-to-end scan tests (httpx.MockTransport)
+│   └── test_features.py      # SARIF, baseline, config, cookies, CORS
+├── .github/workflows/ci.yml  # CI: tests on Python 3.10–3.13
 ├── demo_target.py            # Уязвимый тестовый локальный сервер (стандартная библиотека Python)
 ├── requirements.txt          # Зависимости проекта
 ├── pyproject.toml            # Метаданные сборки и регистрация CLI-команды
-├── setup.py                  # Установочный скрипт
 ├── README.md                 # Главный файл документации
 ├── README.ru.md              # Документация на русском языке
 └── README.en.md              # Документация на английском языке
@@ -76,8 +81,9 @@ d:\webchec\
 
 ### 2. Создание виртуального окружения и установка
 ```bash
-# Перейдите в папку проекта
-cd d:\webchec
+# Клонируйте репозиторий
+git clone https://github.com/kraim0vv/patchlint.git
+cd patchlint
 
 # Создайте виртуальное окружение
 python -m venv venv
@@ -88,11 +94,8 @@ python -m venv venv
 # Для Linux / macOS:
 source venv/bin/activate
 
-# Установите зависимости:
-pip install -r requirements.txt
-
 # Установите утилиту в систему в dev-режиме:
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ---
@@ -136,6 +139,43 @@ patchlint http://localhost:8000 -s HIGH
 patchlint --list-rules
 ```
 
+### SARIF для GitHub code scanning:
+```bash
+patchlint https://staging.example.com -o results.sarif
+```
+Загрузка в GitHub Actions через `github/codeql-action/upload-sarif` (нужно право `security-events: write`):
+```yaml
+- run: patchlint https://staging.example.com -o results.sarif || true
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
+
+### Исключение правил:
+```bash
+patchlint http://localhost:8000 --exclude missing-hsts-header,missing-csp-header
+```
+
+### Baseline (принять известные находки и падать только на новых):
+```bash
+patchlint https://staging.example.com -f json -o patchlint-baseline.json   # один раз
+patchlint https://staging.example.com --baseline patchlint-baseline.json  # в CI
+```
+Находки сопоставляются по ID правила и пути URL, поэтому baseline со staging подходит и для других хостов.
+
+### Файл конфигурации:
+PatchLint читает `.patchlint.toml` (или `[tool.patchlint]` в `pyproject.toml`) из текущей папки. Параметры командной строки имеют приоритет; `--no-config` отключает конфиг.
+```toml
+exclude = ["missing-hsts-header"]
+fail_on = "CRITICAL"
+min_severity = "LOW"
+timeout = 15
+concurrency = 5
+baseline = "patchlint-baseline.json"
+```
+
+Если правило падает с ошибкой, сканирование продолжается, ошибка показывается во всех форматах отчёта, а `summary.status` в JSON становится `completed_with_errors`.
+
 ---
 
 ## Проверка на тестовом сервере (Demo Target)
@@ -148,6 +188,7 @@ patchlint --list-rules
 - Доступный /docker-compose.yml и /dump.sql.
 - Доступная спецификация /openapi.json.
 - Активный Debug Mode (страница ошибки с Werkzeug Traceback).
+- Сессионная cookie без HttpOnly/SameSite и CORS, отражающий любой Origin с credentials.
 
 ### Запуск проверки:
 
@@ -170,7 +211,7 @@ patchlint http://127.0.0.1:8888 -f html -o demo_report.html
 | ID правила | Уровень | Описание проблемы |
 | :--- | :--- | :--- |
 | missing-csp-header | HIGH | Отсутствие Content-Security-Policy. Риск XSS и инъекций данных. |
-| missing-hsts-header | HIGH | Отсутствие Strict-Transport-Security. Риск MitM и SSL-stripping. |
+| missing-hsts-header | HIGH | Отсутствие Strict-Transport-Security. Риск MitM и SSL-stripping. Для целей по HTTP — уровень INFO. |
 | missing-x-frame-options | MEDIUM | Отсутствие защиты от Clickjacking (встраивания во фреймы). |
 | missing-x-content-type-options | LOW | Отсутствие nosniff. Риск подмены MIME-типов браузером. |
 | missing-referrer-policy | LOW | Отсутствие контроля утечки приватных URL-параметров в Referer. |
@@ -191,6 +232,8 @@ patchlint http://127.0.0.1:8888 -f html -o demo_report.html
 | ID правила | Уровень | Описание проблемы |
 | :--- | :--- | :--- |
 | debug-mode-enabled | HIGH | Включен режим отладки (Django Debug, Werkzeug Traceback, Laravel Ignition). Риск RCE и утечки трассировок. |
+| insecure-cookie-flags | MEDIUM | Cookie без Secure (только для HTTPS), HttpOnly или SameSite. Значения cookie в отчёт не попадают. |
+| cors-misconfiguration | HIGH / MEDIUM | Произвольный или `null` Origin отражается в Access-Control-Allow-Origin (HIGH при credentials). |
 
 ---
 
