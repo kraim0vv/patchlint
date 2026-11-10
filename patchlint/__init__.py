@@ -18,7 +18,7 @@ from patchlint.rules import (
     RuleRegistry,
 )
 
-__version__ = "1.0.0"
+from patchlint._version import __version__
 
 __all__ = [
     "AuditEngine",

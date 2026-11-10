@@ -8,17 +8,18 @@ from typing import Sequence
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
-from patchlint.engine import AuditEngine, TargetUnreachableError
+from patchlint.engine import AuditEngine, AuditEngineError, TargetUnreachableError, normalize_target_url
 from patchlint.models import Finding, Severity
 from patchlint.reporter import ConsoleReporter, HtmlReporter, JsonReporter
 from patchlint.rules import RuleRegistry
 
-__version__ = "1.0.0"
+from patchlint._version import __version__
 
 
 def print_banner(console: Console) -> None:
@@ -180,6 +181,12 @@ def main(
         console.print("[dim]Run 'patchlint --help' for usage instructions.[/dim]\n")
         sys.exit(3)
 
+    try:
+        target = normalize_target_url(target)
+    except AuditEngineError as exc:
+        console.print(f"[bold red]Error:[/bold red] {escape(str(exc))}")
+        sys.exit(3)
+
     if report_format == "terminal" and not output_file:
         print_banner(console)
 
@@ -240,7 +247,7 @@ def main(
         except TargetUnreachableError as exc:
             console.print(
                 Panel(
-                    f"[bold red]Target Unreachable:[/bold red] {exc}",
+                    f"[bold red]Target Unreachable:[/bold red] {escape(str(exc))}",
                     title="[bold red]Connection Error[/bold red]",
                     border_style="red",
                 )
@@ -249,7 +256,7 @@ def main(
         except Exception as exc:
             console.print(
                 Panel(
-                    f"[bold red]Unexpected Failure:[/bold red] {exc}",
+                    f"[bold red]Unexpected Failure:[/bold red] {escape(str(exc))}",
                     title="[bold red]Audit Error[/bold red]",
                     border_style="red",
                 )
@@ -266,12 +273,12 @@ def main(
         if not output_file:
             print(content)
         else:
-            console.print(f"[bold green]✔ JSON report successfully saved to:[/bold green] {output_file}")
+            console.print(f"[bold green]✔ JSON report successfully saved to:[/bold green] {escape(output_file)}")
     elif report_format == "html":
         reporter = HtmlReporter()
         dest = output_file or "patchlint_report.html"
         reporter.render(report, destination=dest)
-        console.print(f"[bold green]✔ Interactive HTML report generated at:[/bold green] {dest}")
+        console.print(f"[bold green]✔ Interactive HTML report generated at:[/bold green] {escape(dest)}")
 
     # CI/CD exit code determination
     # Exit 1 when at least one finding reaches or exceeds the --fail-on threshold.

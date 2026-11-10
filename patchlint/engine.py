@@ -8,9 +8,11 @@ import ssl
 import time
 from typing import Callable
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from patchlint._version import __version__
 from patchlint.models import Finding, ScanReport, ScanSummary, Severity
 from patchlint.rules import BaseRule, HeaderRule, RuleRegistry
 from patchlint.rules.base import ScanContext
@@ -22,6 +24,21 @@ class AuditEngineError(Exception):
 
 class TargetUnreachableError(AuditEngineError):
     """Raised when the target web application cannot be reached."""
+
+
+def normalize_target_url(target_url: str) -> str:
+    """Add a missing scheme and drop query/fragment so probe paths append cleanly."""
+    target_url = target_url.strip()
+    if "://" not in target_url:
+        target_url = f"http://{target_url}"
+    parts = urlsplit(target_url)
+    if parts.scheme.lower() not in ("http", "https"):
+        raise AuditEngineError(
+            f"Unsupported URL scheme '{parts.scheme}'. Only http:// and https:// are supported."
+        )
+    if not parts.hostname:
+        raise AuditEngineError(f"Invalid target URL '{target_url}': missing hostname.")
+    return urlunsplit((parts.scheme.lower(), parts.netloc, parts.path or "/", "", ""))
 
 
 class AuditEngine:
@@ -41,7 +58,7 @@ class AuditEngine:
         self.timeout = timeout
         self.concurrency = max(1, concurrency)
         self.verify_ssl = verify_ssl
-        self.user_agent = user_agent or "PatchLint/1.0 (+https://github.com/kraim0vv/patchlint)"
+        self.user_agent = user_agent or f"PatchLint/{__version__} (+https://github.com/kraim0vv/patchlint)"
         self.headers_only = headers_only
         self.min_severity = min_severity
 
@@ -159,9 +176,7 @@ class AuditEngine:
         start_time = datetime.now(timezone.utc)
         start_mono = time.monotonic()
 
-        # Normalize target URL
-        if not target_url.startswith(("http://", "https://")):
-            target_url = f"http://{target_url}"
+        target_url = normalize_target_url(target_url)
 
         findings: list[Finding] = []
 

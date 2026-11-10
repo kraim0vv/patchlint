@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patchlint"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Security linter that gives copy-paste remediation configs for Nginx, Apache & web frameworks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -43,6 +44,12 @@ dev = [
 
 [project.scripts]
 patchlint = "patchlint.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "patchlint._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["patchlint*"]
 
 [tool.setuptools.package-data]
 patchlint = ["templates/*.html"]

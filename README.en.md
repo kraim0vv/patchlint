@@ -37,7 +37,7 @@ Language versions:
 ## Project Structure
 
 ```text
-d:\webchec\
+patchlint/
 ├── patchlint\
 │   ├── __init__.py           # Package exports for core engine and models
 │   ├── __main__.py           # Entrypoint for python -m patchlint
@@ -57,11 +57,12 @@ d:\webchec\
 │   ├── __init__.py
 │   ├── test_cli.py           # Tests for CLI exit codes and --fail-on thresholds
 │   ├── test_rules.py         # Unit tests for rules and false-positive prevention
-│   └── test_engine.py        # Tests for engine execution and report rendering
+│   ├── test_engine.py        # Tests for engine execution and report rendering
+│   └── test_scan.py          # End-to-end scan tests (httpx.MockTransport)
+├── .github/workflows/ci.yml  # CI: tests on Python 3.10–3.13
 ├── demo_target.py            # Local vulnerable server for rapid testing (standard library)
 ├── requirements.txt          # Project dependencies
 ├── pyproject.toml            # Build metadata and console script registration
-├── setup.py                  # Package setup script
 ├── README.md                 # Main documentation file
 ├── README.en.md              # English documentation
 └── README.ru.md              # Russian documentation
@@ -76,8 +77,9 @@ d:\webchec\
 
 ### 2. Environment Setup and Installation
 ```bash
-# Navigate to the project directory
-cd d:\webchec
+# Clone the repository
+git clone https://github.com/kraim0vv/patchlint.git
+cd patchlint
 
 # Create a virtual environment
 python -m venv venv
@@ -88,11 +90,8 @@ python -m venv venv
 # Linux / macOS:
 source venv/bin/activate
 
-# Install dependencies:
-pip install -r requirements.txt
-
 # Install the CLI in development mode:
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ---

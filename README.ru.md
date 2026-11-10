@@ -37,7 +37,7 @@ PatchLint - утилита динамического анализа защищ�
 ## Структура проекта
 
 ```text
-d:\webchec\
+patchlint/
 ├── patchlint\
 │   ├── __init__.py           # Экспорт основных сущностей пакета
 │   ├── __main__.py           # Точка входа для запуска через python -m patchlint
@@ -57,11 +57,12 @@ d:\webchec\
 │   ├── __init__.py
 │   ├── test_cli.py           # Тесты CLI exit-кодов и порогов --fail-on
 │   ├── test_rules.py         # Юнит-тесты правил, respx моки, ложные срабатывания
-│   └── test_engine.py        # Тесты движка и сериализации отчетов
+│   ├── test_engine.py        # Тесты движка и сериализации отчетов
+│   └── test_scan.py          # End-to-end scan tests (httpx.MockTransport)
+├── .github/workflows/ci.yml  # CI: tests on Python 3.10–3.13
 ├── demo_target.py            # Уязвимый тестовый локальный сервер (стандартная библиотека Python)
 ├── requirements.txt          # Зависимости проекта
 ├── pyproject.toml            # Метаданные сборки и регистрация CLI-команды
-├── setup.py                  # Установочный скрипт
 ├── README.md                 # Главный файл документации
 ├── README.ru.md              # Документация на русском языке
 └── README.en.md              # Документация на английском языке
@@ -76,8 +77,9 @@ d:\webchec\
 
 ### 2. Создание виртуального окружения и установка
 ```bash
-# Перейдите в папку проекта
-cd d:\webchec
+# Клонируйте репозиторий
+git clone https://github.com/kraim0vv/patchlint.git
+cd patchlint
 
 # Создайте виртуальное окружение
 python -m venv venv
@@ -88,11 +90,8 @@ python -m venv venv
 # Для Linux / macOS:
 source venv/bin/activate
 
-# Установите зависимости:
-pip install -r requirements.txt
-
 # Установите утилиту в систему в dev-режиме:
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ---
