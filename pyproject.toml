@@ -22,16 +22,17 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-[project.urls]
-Homepage = "https://github.com/kraim0vv/patchlint"
-Repository = "https://github.com/kraim0vv/patchlint"
-Issues = "https://github.com/kraim0vv/patchlint/issues"
 dependencies = [
     "httpx>=0.25.0",
     "rich>=13.5.0",
     "click>=8.1.0",
     "jinja2>=3.1.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kraim0vv/patchlint"
+Repository = "https://github.com/kraim0vv/patchlint"
+Issues = "https://github.com/kraim0vv/patchlint/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -45,3 +46,6 @@ patchlint = "patchlint.cli:main"
 
 [tool.setuptools.package-data]
 patchlint = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

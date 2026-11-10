@@ -189,6 +189,10 @@ async def test_real_env_exposure_detection():
         assert len(findings) == 1
         assert findings[0].severity == Severity.CRITICAL
         assert "DB_PASSWORD" in findings[0].evidence
+        assert "API_KEY" in findings[0].evidence
+        # Secret values must never be copied into reports.
+        assert "SuperSecretPass123!" not in findings[0].evidence
+        assert "xyz789" not in findings[0].evidence
 
 
 @respx.mock

@@ -101,7 +101,14 @@ class AuditEngine:
             ) from exc
         except httpx.ConnectError as exc:
             err_msg = str(exc)
-            if "Errno 11001" in err_msg or "getaddrinfo failed" in err_msg:
+            dns_markers = (
+                "Errno 11001",  # Windows
+                "getaddrinfo failed",
+                "Name or service not known",  # Linux
+                "Temporary failure in name resolution",
+                "nodename nor servname",  # macOS
+            )
+            if any(marker in err_msg for marker in dns_markers):
                 raise TargetUnreachableError(
                     f"DNS resolution failed for {target_url}. Please verify the hostname."
                 ) from exc

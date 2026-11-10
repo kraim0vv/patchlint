@@ -474,6 +474,7 @@
         <button class="filter-btn" onclick="filterSeverity('HIGH')">High ({{ summary.counts_by_severity.HIGH }})</button>
         <button class="filter-btn" onclick="filterSeverity('MEDIUM')">Medium ({{ summary.counts_by_severity.MEDIUM }})</button>
         <button class="filter-btn" onclick="filterSeverity('LOW')">Low ({{ summary.counts_by_severity.LOW }})</button>
+        <button class="filter-btn" onclick="filterSeverity('INFO')">Info ({{ summary.counts_by_severity.INFO }})</button>
       </div>
       <input type="text" id="searchInput" class="search-input" placeholder="Search findings..." onkeyup="searchFindings()">
     </div>

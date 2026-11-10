@@ -186,7 +186,8 @@ class HtmlReporter(BaseReporter):
             from jinja2 import Template
 
             template_str = HTML_REPORT_TEMPLATE.read_text(encoding="utf-8")
-            template = Template(template_str)
+            # Evidence and URLs come from the scanned target and must be escaped.
+            template = Template(template_str, autoescape=True)
             return template.render(
                 summary=report.summary,
                 findings=report.findings,

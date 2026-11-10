@@ -21,6 +21,10 @@ class Severity(str, Enum):
     LOW = "LOW"
     INFO = "INFO"
 
+    # Python 3.11+ renders str-mixin enums as "Severity.X" in str()/templates.
+    def __str__(self) -> str:
+        return self.value
+
     @property
     def rank(self) -> int:
         """Numeric rank for sorting (higher = more severe).
@@ -67,6 +71,9 @@ class Category(str, Enum):
     SECURITY_HEADERS = "Security Headers"
     INFORMATION_DISCLOSURE = "Information Disclosure"
     MISCONFIGURATION = "Misconfiguration"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass(slots=True, frozen=True)

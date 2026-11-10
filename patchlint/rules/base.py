@@ -13,6 +13,28 @@ if TYPE_CHECKING:
 
 from patchlint.models import Category, Finding, Remediation, Severity
 
+_MAX_EVIDENCE_MATCHES = 10
+_KEY_VALUE_RE = re.compile(r"^\s*([A-Za-z0-9_.\-]+)\s*=")
+
+
+def collect_regex_evidence(regexes: list[re.Pattern[str]], body: str) -> list[str]:
+    """Describe all regex matches, masking KEY=VALUE values so reports never carry secrets."""
+    evidence: list[str] = []
+    seen: set[str] = set()
+    for regex in regexes:
+        for match in regex.finditer(body):
+            snippet = match.group(0)[:80].replace("\n", " ").strip()
+            kv = _KEY_VALUE_RE.match(snippet)
+            if kv:
+                snippet = f"{kv.group(1)}=***"
+            if snippet in seen:
+                continue
+            seen.add(snippet)
+            evidence.append(f"Matched pattern: '{snippet}'")
+            if len(evidence) >= _MAX_EVIDENCE_MATCHES:
+                return evidence
+    return evidence
+
 
 @dataclass(slots=True)
 class ScanContext:
@@ -228,11 +250,7 @@ class PathExposureRule(BaseRule):
                 return []
 
         if self.signature_regexes:
-            for regex in self.signature_regexes:
-                match = regex.search(body_text)
-                if match:
-                    snippet = match.group(0)[:80].replace("\n", " ").strip()
-                    matched_evidence.append(f"Matched pattern: '{snippet}'")
+            matched_evidence.extend(collect_regex_evidence(self.signature_regexes, body_text))
             if not matched_evidence:
                 return []
 
@@ -359,15 +377,10 @@ class MultiPathExposureRule(BaseRule):
                 return None
 
         if self.signature_regexes:
-            regex_matched = False
-            for regex in self.signature_regexes:
-                match = regex.search(body_text)
-                if match:
-                    snippet = match.group(0)[:80].replace("\n", " ").strip()
-                    matched_evidence.append(f"Matched pattern: '{snippet}'")
-                    regex_matched = True
-            if not regex_matched and not matched_evidence:
+            regex_evidence = collect_regex_evidence(self.signature_regexes, body_text)
+            if not regex_evidence and not matched_evidence:
                 return None
+            matched_evidence.extend(regex_evidence)
 
         evidence_str = (
             f"Exposed file at {path} (HTTP {resp.status_code}, "
